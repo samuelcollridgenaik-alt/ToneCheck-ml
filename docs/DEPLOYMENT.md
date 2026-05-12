@@ -11,6 +11,30 @@ Why this setup fits:
 - the model should live close to the backend process
 - Hugging Face model weights benefit from persistent disk caching
 
+## Memory Note For Render
+
+If you see an error like:
+
+```text
+Ran out of memory (used over 512MB) while running your code
+```
+
+that usually means the service is on Render's `starter` instance type. Render's instance type docs list `starter` as `512 MB RAM` and `standard` as `2 GB RAM` for web services. This app is ML-backed, so `512 MB` is usually too tight for a Python runtime plus model inference.  
+Source:
+
+- [Render instance types](https://render.com/docs/one-off-jobs)
+
+To reduce memory pressure, the production config now uses a much smaller production model by default:
+
+The current default production model is:
+
+- `gravitee-io/bert-small-toxicity`
+
+Its model card says it is a multilingual toxicity classifier with `not-toxic` / `toxic` outputs and lists the model size as `28.8M params`, which is far smaller than the earlier BERT-scale options.  
+Sources:
+
+- [gravitee-io/bert-small-toxicity model card](https://huggingface.co/gravitee-io/bert-small-toxicity)
+
 ## What Ships in Production
 
 The production image:
@@ -38,6 +62,9 @@ Important production settings:
 - persistent disk mounted at `/data`
 - Hugging Face cache rooted at `/data/huggingface`
 - `WEB_CONCURRENCY=1`
+- `plan: starter`
+
+If Render still reports memory pressure after switching to the smaller model, then the next step is to move the service to `standard` for `2 GB RAM`.
 
 ### Render Deploy Flow
 

@@ -9,10 +9,37 @@ LABEL_ALIASES = {
     "identity_hate": "Identity-Based Hate",
     "identity_attack": "Identity Attack",
     "insult": "Insult",
+    "not_toxic": "Not Toxic",
+    "non_toxic": "Not Toxic",
     "obscene": "Obscene Language",
     "severe_toxic": "Severe Toxicity",
     "threat": "Threat",
     "toxic": "Toxicity",
+    "toxique": "Toxicity",
+}
+
+POSITIVE_CANONICAL_LABELS = {
+    "identity_attack",
+    "identity_hate",
+    "insult",
+    "obscene",
+    "severe_toxic",
+    "threat",
+    "toxic",
+    "toxicity",
+    "toxic_language",
+    "offensive",
+    "hate",
+    "abusive",
+}
+
+NEGATIVE_CANONICAL_LABELS = {
+    "neutral",
+    "not_toxic",
+    "non_toxic",
+    "safe",
+    "clean",
+    "non_offensive",
 }
 
 
@@ -76,16 +103,23 @@ class ToxicityModelService:
             raise RuntimeError("The model returned no predictions.")
 
         top_score = scores[0]["score"]
-        is_toxic = top_score >= self.threshold
-        confidence = round((top_score if is_toxic else 1 - top_score) * 100)
-        score = round(top_score * 100)
+        toxic_score = self._resolve_toxic_score(scores)
+        is_toxic = toxic_score >= self.threshold
+        confidence = round((toxic_score if is_toxic else 1 - toxic_score) * 100)
+        score = round(toxic_score * 100)
 
         strong_signal_floor = max(0.10, self.threshold * 0.3)
-        prominent_scores = [entry for entry in scores if entry["score"] >= strong_signal_floor]
-        if prominent_scores:
+        positive_scores = [entry for entry in scores if self._is_positive_label(entry["canonicalLabel"])]
+        prominent_scores = [entry for entry in positive_scores if entry["score"] >= strong_signal_floor]
+
+        if is_toxic and prominent_scores:
             signal_labels = [entry["displayLabel"] for entry in prominent_scores[:4]]
             primary_signal = signal_labels[0]
             display_categories = prominent_scores
+        elif is_toxic and positive_scores:
+            signal_labels = [positive_scores[0]["displayLabel"]]
+            primary_signal = signal_labels[0]
+            display_categories = [positive_scores[0]]
         else:
             signal_labels = ["Neutral Tone"]
             primary_signal = "Neutral Tone"
@@ -93,7 +127,8 @@ class ToxicityModelService:
                 {
                     "displayLabel": "Neutral Tone",
                     "rawLabel": "neutral",
-                    "score": max(0.0, 1 - top_score),
+                    "canonicalLabel": "neutral",
+                    "score": max(0.0, 1 - toxic_score),
                 }
             ]
 
@@ -103,10 +138,10 @@ class ToxicityModelService:
             "isToxic": is_toxic,
             "model": self.model_name,
             "primarySignal": primary_signal,
-            "recommendation": self._build_recommendation(is_toxic, top_score),
+            "recommendation": self._build_recommendation(is_toxic, toxic_score),
             "score": score,
             "signals": signal_labels,
-            "summary": self._build_summary(is_toxic, primary_signal, top_score),
+            "summary": self._build_summary(is_toxic, primary_signal, toxic_score),
             "threshold": round(self.threshold * 100),
             "verdict": "Toxic" if is_toxic else "Not Toxic",
             "categories": [
@@ -141,10 +176,12 @@ class ToxicityModelService:
         normalized = []
         for entry in entries:
             raw_label = str(entry.get("label", "")).strip()
+            canonical_label = self._canonical_label(raw_label)
             normalized.append(
                 {
                     "displayLabel": self._pretty_label(raw_label),
                     "rawLabel": raw_label,
+                    "canonicalLabel": canonical_label,
                     "score": float(entry.get("score", 0.0)),
                 }
             )
@@ -153,11 +190,37 @@ class ToxicityModelService:
         return normalized
 
     def _pretty_label(self, raw_label: str) -> str:
-        canonical = raw_label.lower().replace("-", "_").replace(" ", "_")
+        canonical = self._canonical_label(raw_label)
         if canonical in LABEL_ALIASES:
             return LABEL_ALIASES[canonical]
 
         return raw_label.replace("_", " ").replace("-", " ").title()
+
+    def _canonical_label(self, raw_label: str) -> str:
+        return raw_label.lower().replace("-", "_").replace(" ", "_")
+
+    def _is_positive_label(self, canonical_label: str) -> bool:
+        return canonical_label in POSITIVE_CANONICAL_LABELS
+
+    def _is_negative_label(self, canonical_label: str) -> bool:
+        return canonical_label in NEGATIVE_CANONICAL_LABELS
+
+    def _resolve_toxic_score(self, scores: list[dict[str, Any]]) -> float:
+        if not scores:
+            return 0.0
+
+        positive_scores = [entry["score"] for entry in scores if self._is_positive_label(entry["canonicalLabel"])]
+        negative_scores = [entry["score"] for entry in scores if self._is_negative_label(entry["canonicalLabel"])]
+
+        if positive_scores:
+            if negative_scores:
+                return max(positive_scores)
+            return max(positive_scores)
+
+        if negative_scores:
+            return max(0.0, 1 - max(negative_scores))
+
+        return scores[0]["score"]
 
     def _build_summary(self, is_toxic: bool, primary_signal: str, top_score: float) -> str:
         if is_toxic:

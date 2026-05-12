@@ -90,7 +90,8 @@ Git publishing and access handoff details live here:
 
 ## Notes
 
-- The default moderation model is `unitary/toxic-bert`.
+- The default local moderation model is `unitary/toxic-bert`.
+- The Render deployment defaults now use `gravitee-io/bert-small-toxicity`, which is much smaller and better suited to memory-constrained deployments.
 - The first model download is large, so persistent model cache storage matters in production.
 - `WEB_CONCURRENCY` should usually stay at `1` for this setup, because each worker would load its own model copy.
 - The local helper scripts are designed to work even if `npm` is not installed globally.

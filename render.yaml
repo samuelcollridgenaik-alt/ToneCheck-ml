@@ -13,7 +13,7 @@ services:
       - key: PRELOAD_MODEL_ON_STARTUP
         value: "1"
       - key: TOXICITY_MODEL_NAME
-        value: unitary/toxic-bert
+        value: gravitee-io/bert-small-toxicity
       - key: TOXICITY_THRESHOLD
         value: "0.50"
       - key: HF_HOME
