@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: tonecheck-ml
+    runtime: docker
+    plan: starter
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: PRELOAD_MODEL_ON_STARTUP
+        value: "1"
+      - key: TOXICITY_MODEL_NAME
+        value: unitary/toxic-bert
+      - key: TOXICITY_THRESHOLD
+        value: "0.50"
+      - key: HF_HOME
+        value: /data/huggingface
+      - key: HUGGINGFACE_HUB_CACHE
+        value: /data/huggingface/hub
+      - key: WEB_CONCURRENCY
+        value: "1"
+    disk:
+      name: model-cache
+      mountPath: /data
+      sizeGB: 5

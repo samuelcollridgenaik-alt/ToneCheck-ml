@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$SCRIPT_DIR"
+NPM_VERSION="10.8.2"
+TOOLS_DIR="$REPO_ROOT/.codex-tools/npm-$NPM_VERSION"
+NPM_CLI="$TOOLS_DIR/package/bin/npm-cli.js"
+LOCK_DIR="$TOOLS_DIR/.lock"
+
+find_node() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+
+  local bundled_node="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+  if [ -x "$bundled_node" ]; then
+    printf '%s\n' "$bundled_node"
+    return 0
+  fi
+
+  local discovered_node
+  discovered_node="$(find "$HOME/.cache/codex-runtimes" -path '*/dependencies/node/bin/node' -type f 2>/dev/null | head -n 1 || true)"
+  if [ -n "$discovered_node" ] && [ -x "$discovered_node" ]; then
+    printf '%s\n' "$discovered_node"
+    return 0
+  fi
+
+  return 1
+}
+
+ensure_npm_cli() {
+  if [ -f "$NPM_CLI" ]; then
+    return 0
+  fi
+
+  mkdir -p "$TOOLS_DIR"
+
+  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    if [ -f "$NPM_CLI" ]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  local extract_dir
+  extract_dir="$(mktemp -d "$TOOLS_DIR/tmp.XXXXXX")"
+  local archive="$extract_dir/npm.tgz"
+
+  cleanup() {
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+    rm -rf "$extract_dir"
+  }
+  trap cleanup EXIT
+
+  if [ -f "$NPM_CLI" ]; then
+    trap - EXIT
+    cleanup
+    return 0
+  fi
+
+  curl --retry 3 --retry-all-errors -fsSL "https://registry.npmjs.org/npm/-/npm-$NPM_VERSION.tgz" -o "$archive"
+  tar -xzf "$archive" -C "$extract_dir"
+  rm -rf "$TOOLS_DIR/package"
+  mv "$extract_dir/package" "$TOOLS_DIR/package"
+  trap - EXIT
+  cleanup
+}
+
+NODE_BIN="$(find_node || true)"
+if [ -z "$NODE_BIN" ]; then
+  echo "No Node.js runtime was found." >&2
+  echo "Install Node.js, or run this project from the Codex desktop environment where a bundled Node runtime is available." >&2
+  exit 1
+fi
+
+ensure_npm_cli
+
+export PATH="$(dirname "$NODE_BIN"):$PATH"
+
+exec "$NODE_BIN" "$NPM_CLI" "$@"

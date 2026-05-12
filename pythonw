@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+find_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+    return 0
+  fi
+
+  local bundled_python="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+  if [ -x "$bundled_python" ]; then
+    printf '%s\n' "$bundled_python"
+    return 0
+  fi
+
+  local discovered_python
+  discovered_python="$(find "$HOME/.cache/codex-runtimes" -path '*/dependencies/python/bin/python3' -type f 2>/dev/null | head -n 1 || true)"
+  if [ -n "$discovered_python" ] && [ -x "$discovered_python" ]; then
+    printf '%s\n' "$discovered_python"
+    return 0
+  fi
+
+  return 1
+}
+
+PYTHON_BIN="$(find_python || true)"
+if [ -z "$PYTHON_BIN" ]; then
+  echo "No Python 3 runtime was found." >&2
+  echo "Install Python 3, or run this project from the Codex desktop environment where a bundled Python runtime is available." >&2
+  exit 1
+fi
+
+exec "$PYTHON_BIN" "$@"
